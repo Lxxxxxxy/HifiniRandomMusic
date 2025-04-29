@@ -22,8 +22,12 @@
     }
 
     .container {
-      margin: 0 auto;
+      margin: 0;  /* 移除自动边距，使内容靠左 */
       padding: 20px;
+      width: calc(100% - 500px); /* 为右侧播放器留出空间 */
+      box-sizing: border-box;
+      position: relative;
+      float: left; /* 添加浮动，确保内容靠左 */
     }
 
     header {
@@ -79,8 +83,7 @@
     }
 
     .music-item {
-      width: calc(10% - 9px);
-      /* 考虑到间距 */
+      width: 160px; /* 固定宽度 */
       padding: 12px;
       display: flex;
       flex-direction: column;
@@ -90,11 +93,48 @@
       cursor: pointer;
       transition: background 0.2s, box-shadow 0.2s;
       background: #fff;
+      position: relative;
     }
 
     .music-item:hover {
       background: #f0f6ff;
-      box-shadow: 0 2px 8px rgba(52, 152, 219, 0.08);
+    }
+
+    .music-item.new-item {
+      background: #e8f5e9; /* 淡绿色背景标识新加载的数据 */
+    }
+
+    .music-item-action {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      width: 50%;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(255, 255, 255, 0.7);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .music-item-play {
+      left: 0;
+      border-radius: 8px 0 0 8px;
+    }
+
+    .music-item-add {
+      right: 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .music-item:hover .music-item-action {
+      opacity: 1;
+    }
+
+    .music-item-icon {
+      font-size: 18px;
+      color: #3498db;
     }
 
     .music-title {
@@ -131,7 +171,6 @@
     }
 
     @keyframes dots {
-
       0%,
       20% {
         content: "Loading.   ";
@@ -188,18 +227,20 @@
       border-color: #3498db;
     }
 
-    /* 简洁悬浮播放器样式 */
-    .player-float-wrap {
+    /* 修改为固定播放器样式 */
+    .player-container {
       position: fixed;
-      left: auto;
-      top: 30px;
-      right: 30px;
-      bottom: auto;
-      width: 640px;
-      min-width: 320px;
-      max-width: 90vw;
-      z-index: 2000;
-      transition: box-shadow 0.2s;
+      right: 0;
+      top: 0;
+      width: 500px; /* 增加默认宽度 */
+      z-index: 1000;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: #fff;
+      box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+      padding: 20px 15px;
+      box-sizing: border-box; /* 确保padding不增加总宽度 */
     }
 
     .music-player {
@@ -221,7 +262,6 @@
       display: flex;
       align-items: center;
       width: 100%;
-      cursor: move;
       user-select: none;
       grid-column: 1;
     }
@@ -595,6 +635,41 @@
       align-items: center;
       margin-top: 10px;
     }
+
+    /* 修改分隔条样式 */
+    .resizer {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      width: 10px;
+      background-color: transparent;
+      cursor: col-resize;
+      z-index: 1500;
+      transition: background-color 0.2s;
+      right: 500px; /* 默认位置在播放器左侧 */
+    }
+
+    .resizer:hover, .resizer.active {
+      background-color: rgba(52, 152, 219, 0.2);
+    }
+
+    .resizer-tip {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      color: #3498db;
+      font-size: 13px;
+      opacity: 0.5;
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .resizer:hover .resizer-tip, .resizer.active .resizer-tip {
+      opacity: 1;
+      color: #1766a3;
+    }
   </style>
 </head>
 
@@ -604,7 +679,7 @@
       <h1>HiFiNi Music List</h1>
       <div class="header-actions">
         <div class="controls">
-          <button class="btn" id="refreshBtn">刷新首页数据</button>
+          <button class="btn" id="refreshBtn">获取新数据</button>
         </div>
         <button class="settings-btn" id="cookieSettingsBtn">
           <span class="settings-icon">⚙️</span>设置Cookie
@@ -622,6 +697,15 @@
     <div id="resultContainer" style="display:none;">
       <div id="resultContent"></div>
     </div>
+  </div>
+
+  <!-- 分隔条 -->
+  <div class="resizer" id="resizer"><span class="resizer-tip">⇆ 拖动调整宽度</span></div>
+
+  <!-- 固定右侧播放器 -->
+  <div class="player-container" id="playerContainer">
+    <div class="music-player" id="musicPlayer"></div>
+    <div class="playlist-panel-wrap" id="playlistPanel"></div>
   </div>
 
   <!-- Cookie设置对话框 -->
@@ -701,7 +785,7 @@
       document.getElementById('status').textContent = message;
     }
 
-    function displayMusicList(data, append = false) {
+    function displayMusicList(data, append = false, isNewData = false) {
       const musicList = document.getElementById('musicList');
 
       if (!append) {
@@ -727,19 +811,56 @@
         const musicInfo = parseMusicInfo(item.title);
         const musicItem = document.createElement('div');
         musicItem.className = 'music-item';
+        // 如果是新加载的数据，添加新数据样式
+        if (isNewData) {
+          musicItem.classList.add('new-item');
+        }
+        
+        // 创建基本信息展示
         musicItem.innerHTML = `
-                    <div class="music-title">${musicInfo.title}</div>
-                    <div class="music-author">${musicInfo.artist}</div>
-                `;
-        musicItem.onclick = () => {
+          <div class="music-title">${musicInfo.title}</div>
+          <div class="music-author">${musicInfo.artist}</div>
+          <div class="music-item-action music-item-play">
+            <span class="music-item-icon">▶️</span>
+          </div>
+          <div class="music-item-action music-item-add">
+            <span class="music-item-icon">+</span>
+          </div>
+        `;
+        
+        // 移除整体点击事件，改为左右两侧单独点击事件
+        const playAction = musicItem.querySelector('.music-item-play');
+        const addAction = musicItem.querySelector('.music-item-add');
+        
+        // 立即播放
+        playAction.onclick = (e) => {
+          e.stopPropagation(); // 阻止冒泡
           item.parsedTitle = musicInfo.title;
           item.parsedArtist = musicInfo.artist;
-          // 新增：加入播放列表
+          
+          // 添加到播放列表的第一行并立即播放
+          playList = playList.filter(s => s.threadId !== item.threadId); // 移除可能存在的相同歌曲
+          playList.unshift({  // 使用unshift添加到列表开头
+            ...item,
+            musicInfo: musicInfo
+          });
+          playIndex = 0;  // 设置为第一首歌曲
+          fetchThreadContentAndPlay(playList[playIndex]);
+        };
+        
+        // 仅添加到播放列表
+        addAction.onclick = (e) => {
+          e.stopPropagation(); // 阻止冒泡
+          item.parsedTitle = musicInfo.title;
+          item.parsedArtist = musicInfo.artist;
+          
+          // 加入播放列表
           addToPlayList({
             ...item,
             musicInfo: musicInfo
           });
         };
+        
         musicList.appendChild(musicItem);
       });
     }
@@ -788,72 +909,48 @@
         const newP = generateParam(detail.generateParamString);
         musicUrl += `?key=${detail.rawKey}&p=${newP}`;
         const audio = new Audio(musicUrl);
-        let floatWrap = document.querySelector('.player-float-wrap');
-        let player, playlistPanel;
-        if (!floatWrap) {
-          floatWrap = document.createElement('div');
-          floatWrap.className = 'player-float-wrap';
-          floatWrap.style.left = '';
-          floatWrap.style.top = '30px';
-          floatWrap.style.right = '30px';
-          floatWrap.style.bottom = '';
-          document.body.appendChild(floatWrap);
-        }
-        // 播放器和播放列表
-        player = floatWrap.querySelector('.music-player');
-        playlistPanel = floatWrap.querySelector('.playlist-panel-wrap');
-        if (!player) {
-          player = document.createElement('div');
-          player.className = 'music-player';
-          floatWrap.appendChild(player);
-        }
-        if (!playlistPanel) {
-          playlistPanel = document.createElement('div');
-          playlistPanel.className = 'playlist-panel-wrap';
-          floatWrap.appendChild(playlistPanel);
-        }
-        if (player.audio) player.audio.pause();
-        player.audio = audio;
+        
+        // 获取固定的播放器容器
+        const playerContainer = document.getElementById('playerContainer');
+        const musicPlayer = document.getElementById('musicPlayer');
+        const playlistPanel = document.getElementById('playlistPanel');
+        
+        // 显示播放器容器
+        playerContainer.style.display = 'flex';
+        
+        if (musicPlayer.audio) musicPlayer.audio.pause();
+        musicPlayer.audio = audio;
+        
         const showTitle = (currentMusicInfo && currentMusicInfo.title) ? currentMusicInfo.title : '';
         const showArtist = (currentMusicInfo && currentMusicInfo.artist) ? currentMusicInfo.artist : '';
-        player.innerHTML = `
-                    <div class="player-header-draggable">
-                        <img src="${detail.coverImage || 'https://via.placeholder.com/100'}" class="player-cover"/>
-                        <div class="player-info">
-                            <div class="player-title">${showTitle}</div>
-                            <div class="player-author">${showArtist}</div>
-                        </div>
-                    </div>
-                    <div class="player-controls">
-                        <button class="player-btn play" onclick="togglePlay(this)"><i class="play-icon">▶</i></button>
-                        <div class="player-progress" onclick="seek(event)"><div class="player-progress-bar" style="width:0%"></div></div>
-                        <div class="player-time">0:00 / 0:00</div>
-                        <div class="player-volume">
-                            <button class="player-btn" onclick="toggleMute(this)"><i class="volume-icon">🔊</i></button>
-                            <div class="player-volume-bar" onclick="setVolume(event)"><div class="player-volume-level" style="width:100%"></div></div>
-                        </div>
-                    </div>
-                    <button class="close-player" onclick="closeFloatingPlayer(event)">&times;</button>
-                    <div class="resize-handle"></div>
-                `;
+        
+        musicPlayer.innerHTML = `
+          <div class="player-header-draggable">
+            <img src="${detail.coverImage || 'https://lixingyu.cn/star.ico'}" class="player-cover"/>
+            <div class="player-info">
+              <div class="player-title">${showTitle}</div>
+              <div class="player-author">${showArtist}</div>
+            </div>
+          </div>
+          <div class="player-controls">
+            <button class="player-btn play" onclick="togglePlay(this)"><span class="play-icon">${svgPlay}</span></button>
+            <div class="player-progress" onclick="seek(event)"><div class="player-progress-bar" style="width:0%"></div></div>
+            <div class="player-time">0:00 / 0:00</div>
+            <div class="player-volume">
+              <button class="player-btn" onclick="toggleMute(this)"><span class="volume-icon">${svgVolume}</span></button>
+              <div class="player-volume-bar" onclick="setVolume(event)"><div class="player-volume-level" style="width:100%"></div></div>
+            </div>
+          </div>
+        `;
 
-        // 必须在创建内容后再绑定事件
-        if (!floatWrap._resizeBound) {
-          enablePlayerResize(floatWrap);
-          floatWrap._resizeBound = true;
-        }
-
-        // 重新绑定拖拽事件
-        enablePlayerResize(floatWrap);
-        enablePlayerDrag(floatWrap);
-
-        const playBtn = player.querySelector('.player-btn.play');
+        const playBtn = musicPlayer.querySelector('.player-btn.play');
         const playIcon = playBtn.querySelector('.play-icon');
-        const progressBar = player.querySelector('.player-progress-bar');
-        const timeDisplay = player.querySelector('.player-time');
-        const volumeBar = player.querySelector('.player-volume-level');
-        audio.addEventListener('play', () => { playIcon.textContent = '⏸'; });
-        audio.addEventListener('pause', () => { playIcon.textContent = '▶'; });
+        const progressBar = musicPlayer.querySelector('.player-progress-bar');
+        const timeDisplay = musicPlayer.querySelector('.player-time');
+        const volumeBar = musicPlayer.querySelector('.player-volume-level');
+        
+        audio.addEventListener('play', () => { playIcon.innerHTML = svgPause; });
+        audio.addEventListener('pause', () => { playIcon.innerHTML = svgPlay; });
         audio.addEventListener('timeupdate', () => {
           const progress = (audio.currentTime / audio.duration) * 100;
           progressBar.style.width = `${progress}%`;
@@ -866,6 +963,7 @@
         audio.addEventListener('ended', () => {
           playNext({ stopPropagation: () => { } });
         });
+        
         audio.play().catch(() => { });
         setTimeout(() => {
           renderPlayList();
@@ -874,45 +972,43 @@
         const resultContent = document.getElementById('resultContent');
         if (resultContent) {
           resultContent.innerHTML = `
-                        <div class="music-player">
-                            <div class="player-header">
-                                <div class="player-info">
-                                    <div class="player-title">${detail.title}</div>
-                                    <div class="player-author">${detail.author || '未知作者'}</div>
-                                </div>
-                            </div>
-                            ${detail.lyrics ? `
-                                <div class="lyrics-container">
-                                    ${detail.lyrics.split('\n').map(line => `
-                                        <div class="lyrics-line">${line}</div>
-                                    `).join('')}
-                                </div>
-                            ` : ''}
-                            <div style="margin-top: 20px;">
-                                <strong>下载链接:</strong><br>
-                                ${detail.downloadLinks.map(link => `
-                                    <a href="${link}" target="_blank" style="color: #3498db; text-decoration: none;">${link}</a><br>
-                                `).join('')}
-                            </div>
-                        </div>
-                    `;
+            <div class="music-player">
+              <div class="player-header">
+                <div class="player-info">
+                  <div class="player-title">${detail.title}</div>
+                  <div class="player-author">${detail.author || '未知作者'}</div>
+                </div>
+              </div>
+              ${detail.lyrics ? `
+                <div class="lyrics-container">
+                  ${detail.lyrics.split('\n').map(line => `
+                    <div class="lyrics-line">${line}</div>
+                  `).join('')}
+                </div>
+              ` : ''}
+              <div style="margin-top: 20px;">
+                <strong>下载链接:</strong><br>
+                ${detail.downloadLinks.map(link => `
+                  <a href="${link}" target="_blank" style="color: #3498db; text-decoration: none;">${link}</a><br>
+                `).join('')}
+              </div>
+            </div>
+          `;
           document.getElementById('resultContainer').style.display = 'block';
         }
       }
     }
 
+    // 移除不需要的浮动播放器函数
     function closeFloatingPlayer(e) {
-      const player = document.querySelector('.music-player');
-      if (player && player.audio) player.audio.pause();
-      if (player) player.remove();
-      document.removeEventListener('mousedown', floatingPlayerClickAway, true);
+      const musicPlayer = document.getElementById('musicPlayer');
+      if (musicPlayer && musicPlayer.audio) musicPlayer.audio.pause();
+      document.getElementById('playerContainer').style.display = 'none';
     }
 
+    // 不再需要点击空白处关闭播放器
     function floatingPlayerClickAway(e) {
-      const player = document.querySelector('.music-player');
-      if (player && !player.contains(e.target)) {
-        closeFloatingPlayer();
-      }
+      // 此函数保留但不再使用
     }
 
     // 播放控制函数
@@ -923,10 +1019,10 @@
 
       if (audio.paused) {
         audio.play();
-        icon.textContent = '⏸';
+        icon.innerHTML = svgPause;
       } else {
         audio.pause();
-        icon.textContent = '▶';
+        icon.innerHTML = svgPlay;
       }
     }
 
@@ -947,10 +1043,10 @@
 
       if (audio.muted) {
         audio.muted = false;
-        icon.textContent = '🔊';
+        icon.innerHTML = svgVolume;
       } else {
         audio.muted = true;
-        icon.textContent = '🔇';
+        icon.innerHTML = svgMute;
       }
     }
 
@@ -1170,28 +1266,25 @@
       renderPlayList();
     }
 
-    // 新增：渲染播放列表
+    // 修改渲染播放列表函数
     function renderPlayList() {
-      let player = document.querySelector('.music-player');
-      if (!player) return;
-      let listHtml = '<div class="playlist-panel">';
+      const playlistPanel = document.getElementById('playlistPanel');
+      if (!playlistPanel) return;
+      
+      // 先渲染控制按钮
+      let listHtml = `<div style='margin-bottom:8px;display:flex;align-items:center;gap:8px;'>`;
+      listHtml += `<button class='player-btn mode-btn' onclick='togglePlayMode(event)' title='顺序/随机' style='font-size:16px;'>${playMode === 'order' ? svgOrder : svgShuffle}</button>`;
+      listHtml += `<button class='player-btn prev-btn' onclick='playPrev(event)' title='上一首' style='font-size:16px;'>${svgPrev}</button>`;
+      listHtml += `<button class='player-btn next-btn' onclick='playNext(event)' title='下一首' style='font-size:16px;'>${svgNext}</button>`;
+      listHtml += `</div>`;
+
+      // 再渲染播放列表
+      listHtml += '<div class="playlist-panel">';
       playList.forEach((song, idx) => {
         listHtml += `<div class="playlist-item${idx === playIndex ? ' active' : ''}" onclick="playFromList(${idx})">${song.musicInfo.title}<span class='playlist-artist'>${song.musicInfo.artist}</span></div>`;
       });
       listHtml += '</div>';
-      // 播放模式切换按钮和上一首/下一首样式统一
-      listHtml += `<div style='margin-top:6px;display:flex;align-items:center;gap:8px;'>`;
-      listHtml += `<button class='player-btn mode-btn' onclick='togglePlayMode(event)' title='顺序/随机' style='font-size:16px;'>${playMode === 'order' ? '⏩' : '🔀'}</button>`;
-      listHtml += `<button class='player-btn prev-btn' onclick='playPrev(event)' title='上一首' style='font-size:16px;'>⏮</button>`;
-      listHtml += `<button class='player-btn next-btn' onclick='playNext(event)' title='下一首' style='font-size:16px;'>⏭</button>`;
-      listHtml += `</div>`;
-      let playlistPanel = document.querySelector('.playlist-panel-wrap');
-      if (!playlistPanel) {
-        playlistPanel = document.createElement('div');
-        playlistPanel.className = 'playlist-panel-wrap';
-        // 播放器下方插入
-        player.parentNode.insertBefore(playlistPanel, player.nextSibling);
-      }
+
       playlistPanel.innerHTML = listHtml;
     }
 
@@ -1240,100 +1333,6 @@
         .then(detail => displayMusicDetail(detail));
     }
 
-    // 拖动整体浮窗
-    function enablePlayerDrag(floatWrap) {
-      if (!floatWrap) return;
-      const header = floatWrap.querySelector('.player-header-draggable');
-      if (!header) return;
-
-      // 先移除旧监听器
-      header.removeEventListener('mousedown', header._mousedownHandler);
-
-      // 定义新的事件处理函数
-      let isDragging = false;
-      let startX, startY, startLeft, startTop;
-      header._mousedownHandler = function (e) {
-        if (e.button !== 0) return;
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        const rect = floatWrap.getBoundingClientRect();
-        startLeft = rect.left;
-        startTop = rect.top;
-        document.body.style.userSelect = 'none';
-
-        // 阻止冒泡和默认行为
-        e.stopPropagation();
-        e.preventDefault();
-      };
-
-      // 绑定事件
-      header.addEventListener('mousedown', header._mousedownHandler);
-
-      // 移除旧的mousemove和mouseup处理
-      document.removeEventListener('mousemove', document._mousemoveHandler);
-      document.removeEventListener('mouseup', document._mouseupHandler);
-
-      // 定义新的mousemove处理
-      document._mousemoveHandler = function (e) {
-        if (!isDragging || !floatWrap) return;
-        let newLeft = startLeft + (e.clientX - startX);
-        let newTop = startTop + (e.clientY - startY);
-        newLeft = Math.max(0, Math.min(window.innerWidth - floatWrap.offsetWidth, newLeft));
-        newTop = Math.max(0, Math.min(window.innerHeight - floatWrap.offsetHeight, newTop));
-        floatWrap.style.left = newLeft + 'px';
-        floatWrap.style.top = newTop + 'px';
-        floatWrap.style.right = '';
-        floatWrap.style.bottom = '';
-
-        // 阻止冒泡和默认行为
-        e.stopPropagation();
-        e.preventDefault();
-      };
-
-      // 定义新的mouseup处理
-      document._mouseupHandler = function () {
-        isDragging = false;
-        document.body.style.userSelect = '';
-      };
-
-      // 绑定事件
-      document.addEventListener('mousemove', document._mousemoveHandler);
-      document.addEventListener('mouseup', document._mouseupHandler);
-    }
-
-    // 让播放器整体宽度可拖动
-    function enablePlayerResize(floatWrap) {
-      if (!floatWrap) return;
-      let player = floatWrap.querySelector('.music-player');
-      if (!player) return;
-      let handle = floatWrap.querySelector('.resize-handle');
-      if (!handle) {
-        handle = document.createElement('div');
-        handle.className = 'resize-handle';
-        player.appendChild(handle);
-      }
-      let isResizing = false;
-      let startX, startWidth;
-      handle.onmousedown = function (e) {
-        e.stopPropagation();
-        isResizing = true;
-        startX = e.clientX;
-        startWidth = floatWrap.offsetWidth;
-        document.body.style.userSelect = 'none';
-      };
-      document.onmousemove = function (e) {
-        if (!isResizing) return;
-        let newWidth = startWidth + (e.clientX - startX);
-        newWidth = Math.max(320, Math.min(window.innerWidth * 0.9, newWidth));
-        floatWrap.style.width = newWidth + 'px';
-      };
-      document.onmouseup = function () {
-        isResizing = false;
-        document.body.style.userSelect = '';
-      };
-    }
-
     // 播放/暂停键控制
     function setupSpacebarControl() {
       document.addEventListener('keydown', (e) => {
@@ -1355,10 +1354,10 @@
             if (player && player.audio) {
               if (player.audio.paused) {
                 player.audio.play();
-                player.querySelector('.play-icon').textContent = '⏸';
+                player.querySelector('.play-icon').innerHTML = svgPause;
               } else {
                 player.audio.pause();
-                player.querySelector('.play-icon').textContent = '▶';
+                player.querySelector('.play-icon').innerHTML = svgPlay;
               }
             }
           }
@@ -1392,7 +1391,7 @@
       refreshBtn.disabled = true;
 
       try {
-        updateStatus(`正在刷新首页数据...`);
+        updateStatus(`正在获取新歌曲数据...`);
         const pageData = await fetchPage(1); // 始终获取第一页
 
         // 过滤掉排除的线程ID
@@ -1410,8 +1409,90 @@
           // 将新数据添加到现有数据的开头
           allMusicData = [...newData, ...allMusicData];
 
-          // 重新显示完整的数据列表
-          displayMusicList(allMusicData, false);
+          // 先移除所有之前的新歌标记
+          document.querySelectorAll('.music-item.new-item').forEach(item => {
+            item.classList.remove('new-item');
+          });
+
+          // 在当前列表前面添加新歌曲
+          const musicList = document.getElementById('musicList');
+          const numRows = 10;
+          const numCols = Math.ceil(newData.length / numRows);
+
+          // 创建一个二维数组用于重排数据
+          let reorderedNewData = [];
+          for (let col = 0; col < numCols; col++) {
+            for (let row = 0; row < numRows; row++) {
+              const index = col * numRows + row;
+              if (index < newData.length) {
+                reorderedNewData.push(newData[index]);
+              }
+            }
+          }
+
+          // 创建临时容器以保存新项目
+          const tempContainer = document.createDocumentFragment();
+          
+          // 添加新歌曲到临时容器
+          reorderedNewData.forEach(item => {
+            const musicInfo = parseMusicInfo(item.title);
+            const musicItem = document.createElement('div');
+            musicItem.className = 'music-item new-item'; // 添加new-item类标记为新数据
+            
+            // 创建基本信息展示
+            musicItem.innerHTML = `
+              <div class="music-title">${musicInfo.title}</div>
+              <div class="music-author">${musicInfo.artist}</div>
+              <div class="music-item-action music-item-play">
+                <span class="music-item-icon">▶️</span>
+              </div>
+              <div class="music-item-action music-item-add">
+                <span class="music-item-icon">+</span>
+              </div>
+            `;
+            
+            // 添加点击事件
+            const playAction = musicItem.querySelector('.music-item-play');
+            const addAction = musicItem.querySelector('.music-item-add');
+            
+            // 立即播放
+            playAction.onclick = (e) => {
+              e.stopPropagation(); // 阻止冒泡
+              item.parsedTitle = musicInfo.title;
+              item.parsedArtist = musicInfo.artist;
+              
+              // 添加到播放列表的第一行并立即播放
+              playList = playList.filter(s => s.threadId !== item.threadId); // 移除可能存在的相同歌曲
+              playList.unshift({  // 使用unshift添加到列表开头
+                ...item,
+                musicInfo: musicInfo
+              });
+              playIndex = 0;  // 设置为第一首歌曲
+              fetchThreadContentAndPlay(playList[playIndex]);
+            };
+            
+            // 仅添加到播放列表
+            addAction.onclick = (e) => {
+              e.stopPropagation(); // 阻止冒泡
+              item.parsedTitle = musicInfo.title;
+              item.parsedArtist = musicInfo.artist;
+              
+              // 加入播放列表
+              addToPlayList({
+                ...item,
+                musicInfo: musicInfo
+              });
+            };
+            
+            tempContainer.appendChild(musicItem);
+          });
+          
+          // 将新的歌曲项插入到列表的开头
+          if (musicList.firstChild) {
+            musicList.insertBefore(tempContainer, musicList.firstChild);
+          } else {
+            musicList.appendChild(tempContainer);
+          }
 
           updateStatus(`已添加 ${newData.length} 首新歌曲，总计 ${allMusicData.length} 首歌曲`);
 
@@ -1419,7 +1500,7 @@
           hasMoreData = true;
         }
       } catch (err) {
-        error.textContent = '刷新数据失败: ' + err.message;
+        error.textContent = '获取新数据失败: ' + err.message;
         error.style.display = 'block';
       } finally {
         isLoadingMore = false;
@@ -1527,7 +1608,7 @@
       });
     }
 
-    // 初始化加载
+    // 修改初始化函数，确保播放器始终可见
     async function initializeApp() {
       const loading = document.querySelector('.loading');
       loading.style.display = 'block';
@@ -1547,10 +1628,121 @@
 
         // 设置Cookie对话框
         setupCookieModal();
+        
+        // 确保播放器容器可见，并设置默认内容
+        const playerContainer = document.getElementById('playerContainer');
+        const musicPlayer = document.getElementById('musicPlayer');
+        playerContainer.style.display = 'flex';
+        
+        // 设置默认播放器内容
+        musicPlayer.innerHTML = `
+          <div class="player-header-draggable">
+            <img src="https://lixingyu.cn/star.ico" class="player-cover"/>
+            <div class="player-info">
+              <div class="player-title">欢迎使用 HiFiNi Music</div>
+              <div class="player-author">点击音乐开始播放</div>
+            </div>
+          </div>
+          <div class="player-controls">
+            <button class="player-btn play" onclick="togglePlay(this)"><span class="play-icon">${svgPlay}</span></button>
+            <div class="player-progress" onclick="seek(event)"><div class="player-progress-bar" style="width:0%"></div></div>
+            <div class="player-time">0:00 / 0:00</div>
+            <div class="player-volume">
+              <button class="player-btn" onclick="toggleMute(this)"><span class="volume-icon">${svgVolume}</span></button>
+              <div class="player-volume-bar" onclick="setVolume(event)"><div class="player-volume-level" style="width:100%"></div></div>
+            </div>
+          </div>
+        `;
+        
+        // 设置拖动调整宽度功能
+        setupResizer();
       } finally {
         loading.style.display = 'none';
       }
     }
+
+    // 更新分隔条位置
+    function updateResizerPosition() {
+      const playerContainer = document.getElementById('playerContainer');
+      const resizer = document.getElementById('resizer');
+      
+      // 分隔条位置与播放器左边界对齐
+      resizer.style.right = playerContainer.offsetWidth + 'px';
+    }
+
+    // 替换setupResizer函数中的移动处理逻辑
+    function setupResizer() {
+      const resizer = document.getElementById('resizer');
+      const container = document.querySelector('.container');
+      const playerContainer = document.getElementById('playerContainer');
+      
+      // 初始化分隔条位置
+      updateResizerPosition();
+      
+      let isResizing = false;
+      let lastX = 0;
+      
+      resizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        resizer.classList.add('active');
+        lastX = e.clientX;
+        
+        // 防止选中文本
+        document.body.style.userSelect = 'none';
+        
+        const onMouseMove = (e) => {
+          if (!isResizing) return;
+          
+          // 计算移动距离
+          const dx = e.clientX - lastX;
+          lastX = e.clientX;
+          
+          // 获取当前宽度
+          const currentPlayerWidth = playerContainer.offsetWidth;
+          
+          // 计算新的播放器宽度
+          const minWidth = 300; // 最小宽度
+          const maxWidth = window.innerWidth - 300; // 最大宽度（留出左侧最小空间）
+          
+          // 计算新的播放器宽度
+          let newPlayerWidth = Math.min(maxWidth, Math.max(minWidth, currentPlayerWidth - dx));
+          
+          // 更新播放器宽度
+          playerContainer.style.width = `${newPlayerWidth}px`;
+          
+          // 更新内容区宽度
+          container.style.width = `calc(100% - ${newPlayerWidth}px)`;
+          
+          // 更新分隔条位置
+          updateResizerPosition();
+        };
+        
+        const onMouseUp = () => {
+          isResizing = false;
+          resizer.classList.remove('active');
+          document.body.style.userSelect = '';
+          
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        };
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+      
+      // 窗口大小改变时更新分隔条位置
+      window.addEventListener('resize', updateResizerPosition);
+    }
+
+    // 在脚本最前面定义SVG变量：
+    const svgPlay = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="5,3 17,10 5,17" fill="#fff"/></svg>`;
+    const svgPause = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="3" width="4" height="14" rx="1" fill="#fff"/><rect x="12" y="3" width="4" height="14" rx="1" fill="#fff"/></svg>`;
+    const svgPrev = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="15,3 7,10 15,17" fill="#fff"/><rect x="4" y="3" width="2" height="14" rx="1" fill="#fff"/></svg>`;
+    const svgNext = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="5,3 13,10 5,17" fill="#fff"/><rect x="14" y="3" width="2" height="14" rx="1" fill="#fff"/></svg>`;
+    const svgVolume = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="3,8 7,8 12,4 12,16 7,12 3,12" fill="#fff"/></svg>`;
+    const svgMute = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="3,8 7,8 12,4 12,16 7,12 3,12" fill="#fff"/><line x1="15" y1="7" x2="19" y2="13" stroke="#fff" stroke-width="2"/><line x1="19" y1="7" x2="15" y2="13" stroke="#fff" stroke-width="2"/></svg>`;
+    const svgOrder = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="9" width="14" height="2" rx="1" fill="#fff"/></svg>`;
+    const svgShuffle = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4L16 16M16 4L4 16" stroke="#fff" stroke-width="2"/></svg>`;
   </script>
 </body>
 
