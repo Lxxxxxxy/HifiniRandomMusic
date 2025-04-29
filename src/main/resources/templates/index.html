@@ -241,7 +241,8 @@
       box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
       padding: 20px 15px;
       box-sizing: border-box; /* 确保padding不增加总宽度 */
-      transition: all 0.3s ease; /* 添加过渡效果 */
+      /* 移除这个过渡效果，它会导致拖拽后回到默认宽度 */
+      /* transition: all 0.3s ease; */
     }
 
     .music-player {
@@ -1923,6 +1924,9 @@
       
       // 分隔条位置与播放器左边界对齐
       resizer.style.right = playerContainer.offsetWidth + 'px';
+      
+      // 调试日志
+      console.log('更新分隔条位置, 播放器宽度:', playerContainer.offsetWidth);
     }
 
     // 替换setupResizer函数中的移动处理逻辑
@@ -1937,7 +1941,8 @@
       let isResizing = false;
       let lastX = 0;
       
-      resizer.addEventListener('mousedown', (e) => {
+      // 修复拖拽事件
+      resizer.addEventListener('mousedown', function(e) {
         isResizing = true;
         resizer.classList.add('active');
         lastX = e.clientX;
@@ -1945,7 +1950,7 @@
         // 防止选中文本
         document.body.style.userSelect = 'none';
         
-        const onMouseMove = (e) => {
+        function onMouseMove(e) {
           if (!isResizing) return;
           
           // 计算移动距离
@@ -1962,31 +1967,55 @@
           // 计算新的播放器宽度
           let newPlayerWidth = Math.min(maxWidth, Math.max(minWidth, currentPlayerWidth - dx));
           
-          // 更新播放器宽度
-          playerContainer.style.width = `${newPlayerWidth}px`;
+          // 更新播放器宽度 - 显式设置为固定像素值
+          playerContainer.style.width = newPlayerWidth + 'px';
           
           // 更新内容区宽度
           container.style.width = `calc(100% - ${newPlayerWidth}px)`;
           
           // 更新分隔条位置
           updateResizerPosition();
-        };
+          
+          // 调试
+          console.log('拖拽中, 新宽度:', newPlayerWidth);
+        }
         
-        const onMouseUp = () => {
+        function onMouseUp() {
           isResizing = false;
           resizer.classList.remove('active');
           document.body.style.userSelect = '';
           
+          // 保存最终宽度到localStorage
+          const finalWidth = playerContainer.offsetWidth;
+          localStorage.setItem('playerWidth', finalWidth);
+          console.log('拖拽结束, 保存宽度:', finalWidth);
+          
           document.removeEventListener('mousemove', onMouseMove);
           document.removeEventListener('mouseup', onMouseUp);
-        };
+        }
         
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
+        
+        // 阻止事件冒泡和默认行为
+        e.stopPropagation();
+        e.preventDefault();
       });
       
       // 窗口大小改变时更新分隔条位置
       window.addEventListener('resize', updateResizerPosition);
+      
+      // 尝试从localStorage恢复宽度
+      const savedWidth = localStorage.getItem('playerWidth');
+      if (savedWidth) {
+        const width = parseInt(savedWidth);
+        if (!isNaN(width) && width >= 300) {
+          playerContainer.style.width = width + 'px';
+          container.style.width = `calc(100% - ${width}px)`;
+          updateResizerPosition();
+          console.log('恢复保存的宽度:', width);
+        }
+      }
     }
 
     // 在脚本最前面定义SVG变量：
