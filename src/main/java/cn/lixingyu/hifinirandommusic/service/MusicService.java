@@ -4,6 +4,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.jsoup.Connection;
 import org.springframework.stereotype.Service;
 
 import cn.lixingyu.hifinirandommusic.model.MusicDetail;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
+import java.net.URLEncoder;
 
 @Service
 public class MusicService {
@@ -272,6 +274,108 @@ public class MusicService {
         } catch (IOException e) {
             e.printStackTrace();
             return null;
+        }
+    }
+
+    public List<MusicItem> searchMusic(String keyword) {
+        List<MusicItem> searchResults = new ArrayList<>();
+        try {
+            // 确保cookie是最新的
+            Map<String, Object> cookieStatus = getCookieStatus();
+            if ((boolean) cookieStatus.get("needsUpdate")) {
+                return searchResults;
+            }
+
+            // 构建搜索URL
+            String searchUrl = BASE_URL + "/search-" + URLEncoder.encode(keyword, "UTF-8") + ".htm";
+            System.out.println("Searching URL: " + searchUrl);
+
+            // 发送请求并获取响应
+            Document doc = Jsoup.connect(searchUrl)
+                    .cookie("cookie", cookie)
+                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                    .timeout(10000)
+                    .get();
+
+            // 解析搜索结果 - 修改选择器以匹配实际HTML结构
+            Elements entries = doc.select("li.media.thread");
+            System.out.println("Found " + entries.size() + " results");
+
+            for (Element entry : entries) {
+                MusicItem item = new MusicItem();
+                
+                // 获取标题和链接
+                Element titleElement = entry.selectFirst(".subject a");
+                if (titleElement != null) {
+                    item.setTitle(titleElement.text().trim());
+                    String href = titleElement.attr("href");
+                    if (href != null) {
+                        item.setThreadId(href.replaceAll(".*thread-(\\d+)\\.htm", "$1"));
+                    }
+                }
+                
+                // 获取作者
+                Element authorElement = entry.selectFirst(".username.text-grey");
+                if (authorElement != null) {
+                    item.setAuthor(authorElement.text().trim());
+                }
+                
+                // 获取时间
+                Element timeElement = entry.selectFirst(".date.text-grey");
+                if (timeElement != null) {
+                    item.setTime(timeElement.text().trim());
+                }
+                
+                // 获取浏览量
+                Element viewsElement = entry.selectFirst(".eye.comment-o");
+                if (viewsElement != null) {
+                    item.setViews(viewsElement.text().trim());
+                }
+                
+                if (item.getTitle() != null && item.getThreadId() != null) {
+                    searchResults.add(item);
+                    System.out.println("Added result: " + item.getTitle());
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("搜索出错: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return searchResults;
+    }
+
+    public void updateCookie() throws IOException {
+        try {
+            // 访问首页获取cookie
+            Connection.Response response = Jsoup.connect(BASE_URL)
+                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                    .method(Connection.Method.GET)
+                    .execute();
+
+            // 获取所有cookie
+            Map<String, String> cookies = response.cookies();
+            StringBuilder cookieBuilder = new StringBuilder();
+            
+            // 构建cookie字符串
+            for (Map.Entry<String, String> entry : cookies.entrySet()) {
+                if (cookieBuilder.length() > 0) {
+                    cookieBuilder.append("; ");
+                }
+                cookieBuilder.append(entry.getKey()).append("=").append(entry.getValue());
+            }
+            
+            // 更新cookie
+            this.cookie = cookieBuilder.toString();
+            System.out.println("Cookie更新成功: " + this.cookie);
+            
+            // 验证cookie是否有效
+            Map<String, Object> status = getCookieStatus();
+            if ((boolean) status.get("needsUpdate")) {
+                throw new IOException("Cookie更新失败: " + status.get("message"));
+            }
+        } catch (Exception e) {
+            System.err.println("更新Cookie失败: " + e.getMessage());
+            throw new IOException("更新Cookie失败: " + e.getMessage());
         }
     }
 } 

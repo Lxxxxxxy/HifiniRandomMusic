@@ -177,4 +177,47 @@ public class MusicController {
             if (conn != null) conn.disconnect();
         }
     }
+
+    @GetMapping("/api/search")
+    @ResponseBody
+    public List<MusicItem> searchMusic(@RequestParam String keyword) {
+        System.out.println("Received search request for keyword: " + keyword);
+        List<MusicItem> results = musicService.searchMusic(keyword);
+        System.out.println("Found " + results.size() + " results");
+        return results;
+    }
+
+    @GetMapping("/api/cookie/status")
+    @ResponseBody
+    public Map<String, Object> checkCookieStatus() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            Map<String, Object> cookieStatus = musicService.getCookieStatus();
+            result.put("valid", !(boolean) cookieStatus.get("needsUpdate"));
+            result.put("message", cookieStatus.get("message"));
+        } catch (Exception e) {
+            result.put("valid", false);
+            result.put("message", "检查Cookie状态时发生错误: " + e.getMessage());
+        }
+        return result;
+    }
+
+    @PostMapping("/api/cookie/set")
+    @ResponseBody
+    public Map<String, Object> setCookie() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            System.out.println("开始设置Cookie...");
+            musicService.updateCookie();
+            System.out.println("Cookie设置成功");
+            result.put("success", true);
+            result.put("message", "Cookie设置成功");
+        } catch (Exception e) {
+            System.err.println("Cookie设置失败: " + e.getMessage());
+            e.printStackTrace();
+            result.put("success", false);
+            result.put("message", "Cookie设置失败: " + e.getMessage());
+        }
+        return result;
+    }
 } 
