@@ -1,23 +1,21 @@
 package cn.lixingyu.hifinirandommusic.service;
 
+import cn.lixingyu.hifinirandommusic.model.MusicDetail;
+import cn.lixingyu.hifinirandommusic.model.MusicItem;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.jsoup.Connection;
 import org.springframework.stereotype.Service;
 
-import cn.lixingyu.hifinirandommusic.model.MusicDetail;
-import cn.lixingyu.hifinirandommusic.model.MusicItem;
-
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
-import java.util.concurrent.TimeUnit;
-import java.net.URLEncoder;
 
 @Service
 public class MusicService {
@@ -27,30 +25,19 @@ public class MusicService {
     private String cookie = "";
     private static final String BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     private Date cookieLastUpdated = null;
-    private static final long COOKIE_MAX_AGE_DAYS = 3; // Cookie 最大有效期为3天
 
     // 获取Cookie状态
     public Map<String, Object> getCookieStatus() {
         Map<String, Object> status = new HashMap<>();
-        
+
         boolean hasCookie = cookie != null && !cookie.trim().isEmpty();
         boolean isExpired = false;
-        
-        if (cookieLastUpdated != null) {
-            // 计算cookie设置后的天数
-            long diffInMillies = Math.abs(new Date().getTime() - cookieLastUpdated.getTime());
-            long diffInDays = TimeUnit.DAYS.convert(diffInMillies, TimeUnit.MILLISECONDS);
-            isExpired = diffInDays >= COOKIE_MAX_AGE_DAYS;
-        } else if (hasCookie) {
-            // 如果有cookie但没有更新时间，设为已过期
-            isExpired = true;
-        }
-        
+
         status.put("hasCookie", hasCookie);
         status.put("isExpired", isExpired || !hasCookie);
         status.put("needsUpdate", !hasCookie || isExpired);
         status.put("lastUpdated", cookieLastUpdated);
-        
+
         return status;
     }
 
@@ -101,7 +88,9 @@ public class MusicService {
         StringBuilder outText = new StringBuilder();
 
         for (int i = 0, j = 0; i < data.length(); i++, j++) {
-            if (j == key.length()) j = 0;
+            if (j == key.length()) {
+                j = 0;
+            }
             outText.append((char) (data.charAt(i) ^ key.charAt(j)));
         }
 
@@ -115,37 +104,30 @@ public class MusicService {
             // 如果需要更新Cookie，返回空列表
             return new ArrayList<>();
         }
-        
+
         List<MusicItem> allSongs = new ArrayList<>();
         try {
             // 获取第一页来确定总页数
-            Document firstPage = Jsoup.connect(FORUM_URL + "1.htm")
-                    .cookie("cookie", cookie)
-                    .get();
-            
+            Document firstPage = Jsoup.connect(FORUM_URL + "1.htm").cookie("cookie", cookie).get();
+
             // 获取总页数
             Elements pageLinks = firstPage.select(".page a");
-            int totalPages = pageLinks.stream()
-                    .mapToInt(link -> {
-                        try {
-                            return Integer.parseInt(link.text());
-                        } catch (NumberFormatException e) {
-                            return 0;
-                        }
-                    })
-                    .max()
-                    .orElse(1);
+            int totalPages = pageLinks.stream().mapToInt(link -> {
+                try {
+                    return Integer.parseInt(link.text());
+                } catch (NumberFormatException e) {
+                    return 0;
+                }
+            }).max().orElse(1);
 
             // 获取所有页面的数据
             for (int page = 1; page <= totalPages; page++) {
-                Document doc = Jsoup.connect(FORUM_URL + page + ".htm")
-                        .cookie("cookie", cookie)
-                        .get();
-                
+                Document doc = Jsoup.connect(FORUM_URL + page + ".htm").cookie("cookie", cookie).get();
+
                 Elements entries = doc.select("li.media.thread");
                 for (Element entry : entries) {
                     MusicItem item = new MusicItem();
-                    
+
                     // 获取标题和链接
                     Element titleElement = entry.selectFirst(".subject a");
                     if (titleElement != null) {
@@ -155,30 +137,30 @@ public class MusicService {
                             item.setThreadId(href.replaceAll(".*thread-(\\d+)\\.htm", "$1"));
                         }
                     }
-                    
+
                     // 获取作者
                     Element authorElement = entry.selectFirst(".username.text-grey");
                     if (authorElement != null) {
                         item.setAuthor(authorElement.text().trim());
                     }
-                    
+
                     // 获取时间
                     Element timeElement = entry.selectFirst(".date.text-grey");
                     if (timeElement != null) {
                         item.setTime(timeElement.text().trim());
                     }
-                    
+
                     // 获取浏览量
                     Element viewsElement = entry.selectFirst(".eye.comment-o");
                     if (viewsElement != null) {
                         item.setViews(viewsElement.text().trim());
                     }
-                    
+
                     if (item.getTitle() != null && item.getThreadId() != null) {
                         allSongs.add(item);
                     }
                 }
-                
+
                 // 添加延迟以避免请求过快
                 Thread.sleep(1000);
             }
@@ -198,32 +180,25 @@ public class MusicService {
             detail.setLyrics("您的Cookie已过期或未设置，请更新Cookie后再试。");
             return detail;
         }
-        
+
         try {
             // 设置请求头
-            Document doc = Jsoup.connect(THREAD_URL + threadId + ".htm")
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                    .header("Connection", "keep-alive")
-                    .header("Upgrade-Insecure-Requests", "1")
-                    .cookie("cookie", cookie)
-                    .get();
-            
+            Document doc = Jsoup.connect(THREAD_URL + threadId + ".htm").header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36").header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8").header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8").header("Connection", "keep-alive").header("Upgrade-Insecure-Requests", "1").cookie("cookie", cookie).get();
+
             MusicDetail detail = new MusicDetail();
-            
+
             // 获取标题
             Element titleElement = doc.selectFirst("h1");
             if (titleElement != null) {
                 detail.setTitle(titleElement.text());
             }
-            
+
             // 获取歌词
             Element lyricsElement = doc.selectFirst(".lyrics");
             if (lyricsElement != null) {
                 detail.setLyrics(lyricsElement.text());
             }
-            
+
             // 获取下载链接
             Elements downloadElements = doc.select("a[href*='pan.baidu.com']");
             List<String> downloadLinks = new ArrayList<>();
@@ -231,7 +206,7 @@ public class MusicService {
                 downloadLinks.add(link.attr("href"));
             }
             detail.setDownloadLinks(downloadLinks);
-            
+
             // 获取音乐信息
             Elements scripts = doc.select("script");
             for (Element script : scripts) {
@@ -243,24 +218,24 @@ public class MusicService {
                         // 提取 key 和 p 参数
                         String key = urlMatch.replaceAll(".*key=([^&]+).*", "$1");
                         String p = urlMatch.replaceAll(".*p=([^&]+).*", "$1");
-                        
+
                         // 保存原始参数
                         detail.setRawKey(key);
                         detail.setRawP(p);
-                        
+
                         // 设置 generateParam 的 key
                         detail.setGenerateParamKey("95wwwHiFiNicom27");
-                        
+
                         // 提取 generateParam 的原始字符串
                         String generateParamMatch = content.replaceAll("(?s).*generateParam\\('([^']+)'\\).*", "$1");
                         if (!generateParamMatch.equals(content)) {
                             detail.setGenerateParamString(generateParamMatch);
                         }
-                        
+
                         // 设置基础URL
                         detail.setMusicUrl(BASE_URL + "/get_music.php");
                     }
-                    
+
                     // 提取封面图片
                     String picMatch = content.replaceAll("(?s).*pic:\\s*['\"]([^'\"]+)['\"].*", "$1");
                     if (!picMatch.equals(content)) {
@@ -269,7 +244,7 @@ public class MusicService {
                     break;
                 }
             }
-            
+
             return detail;
         } catch (IOException e) {
             e.printStackTrace();
@@ -291,11 +266,7 @@ public class MusicService {
             System.out.println("Searching URL: " + searchUrl);
 
             // 发送请求并获取响应
-            Document doc = Jsoup.connect(searchUrl)
-                    .cookie("cookie", cookie)
-                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-                    .timeout(10000)
-                    .get();
+            Document doc = Jsoup.connect(searchUrl).cookie("cookie", cookie).userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36").timeout(10000).get();
 
             // 解析搜索结果 - 修改选择器以匹配实际HTML结构
             Elements entries = doc.select("li.media.thread");
@@ -303,7 +274,7 @@ public class MusicService {
 
             for (Element entry : entries) {
                 MusicItem item = new MusicItem();
-                
+
                 // 获取标题和链接
                 Element titleElement = entry.selectFirst(".subject a");
                 if (titleElement != null) {
@@ -313,25 +284,25 @@ public class MusicService {
                         item.setThreadId(href.replaceAll(".*thread-(\\d+)\\.htm", "$1"));
                     }
                 }
-                
+
                 // 获取作者
                 Element authorElement = entry.selectFirst(".username.text-grey");
                 if (authorElement != null) {
                     item.setAuthor(authorElement.text().trim());
                 }
-                
+
                 // 获取时间
                 Element timeElement = entry.selectFirst(".date.text-grey");
                 if (timeElement != null) {
                     item.setTime(timeElement.text().trim());
                 }
-                
+
                 // 获取浏览量
                 Element viewsElement = entry.selectFirst(".eye.comment-o");
                 if (viewsElement != null) {
                     item.setViews(viewsElement.text().trim());
                 }
-                
+
                 if (item.getTitle() != null && item.getThreadId() != null) {
                     searchResults.add(item);
                     System.out.println("Added result: " + item.getTitle());
@@ -347,15 +318,12 @@ public class MusicService {
     public void updateCookie() throws IOException {
         try {
             // 访问首页获取cookie
-            Connection.Response response = Jsoup.connect(BASE_URL)
-                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-                    .method(Connection.Method.GET)
-                    .execute();
+            Connection.Response response = Jsoup.connect(BASE_URL).userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36").method(Connection.Method.GET).execute();
 
             // 获取所有cookie
             Map<String, String> cookies = response.cookies();
             StringBuilder cookieBuilder = new StringBuilder();
-            
+
             // 构建cookie字符串
             for (Map.Entry<String, String> entry : cookies.entrySet()) {
                 if (cookieBuilder.length() > 0) {
@@ -363,11 +331,11 @@ public class MusicService {
                 }
                 cookieBuilder.append(entry.getKey()).append("=").append(entry.getValue());
             }
-            
+
             // 更新cookie
             this.cookie = cookieBuilder.toString();
             System.out.println("Cookie更新成功: " + this.cookie);
-            
+
             // 验证cookie是否有效
             Map<String, Object> status = getCookieStatus();
             if ((boolean) status.get("needsUpdate")) {
@@ -378,4 +346,4 @@ public class MusicService {
             throw new IOException("更新Cookie失败: " + e.getMessage());
         }
     }
-} 
+}
